@@ -75,18 +75,14 @@ class ExpertRidge:
       # Return different number based on actual features
       return [200.0] * len(feature_names) 
     
-  def _fit_ridge_with_priors(self, X, y, mu_prior, lambda_reg):
-  # Convert input to arrays 
-    #X = np.array(X)
-    #y = np.array(y)
-    #mu_prior = np.array(mu_prior)
-    # Transforms the response object
-    y_tilde = y - X @ mu_prior
+  def _fit_ridge_with_priors(self, X, y, mu, lambda_reg):
+    # Transform y with the mu from the llm 
+    y_tilde = y - X @ mu
     # Fit ridge regression
     ridge = Ridge(alpha=lambda_reg, fit_intercept=False)
     ridge.fit(X, y_tilde)
 
-    beta = ridge.coef_ + mu_prior
+    beta = ridge.coef_ + mu
 
     return beta
 
@@ -118,21 +114,21 @@ class ExpertRidge:
     """
     print("=== FITTING EXPERT RIDGE ===")
     
-    # Step 1: Validate input
+    # Validate input
     self._validate_input_data(X, y)
     print("✅ Input validation passed")
 
-    # Step 2: Convert to arrays & store feature names
+    # Convert to arrays & store feature names
     X_array, y_array = self._convert_to_arrays(X, y)
     print(f"✅ Converted to arrays: X{X_array.shape}, y{y_array.shape}")
 
     if custom_priors is not None:
-      print("📋 Using provided custom priors")
+      print("Using provided custom priors")
       priors = custom_priors
       self.llm_response_ = {'priors': custom_priors, 'source': 'custom'}
-      # Step 3: Get priors (LLM or mock)
+      # Get coeficcients
     elif use_llm:
-        print("🤖 Getting priors from LLM...")
+        print("Getting coefficients from LLM...")
         try:
             # Create LLM elicitor
             llm_elicitor = LLMPriorElicitor(model_name=self.llm_model)
@@ -162,11 +158,11 @@ class ExpertRidge:
 
     print(f"   Final priors used: {priors}")
 
-    # Step 4: Validate priors (skip for now)
+    # Validate priors (implement later)
     # if self.validate_priors:
     #     validation = self.prior_validator.validate_all(...)
 
-    # Step 5: Adjust alpha based on confidence (skip for now)
+    # Adjust alpha based on confidence (implement later)
     # adjusted_alpha = self._adjust_alpha_by_confidence(self.alpha, "medium")
 
     # Step 6: Fit ridge with priors
@@ -174,7 +170,7 @@ class ExpertRidge:
     coeffs = self._fit_ridge_with_priors(X_array, y_array, np.array(priors), self.alpha)
     print(f"✅ Ridge fitting complete")
 
-    # Step 7: Store results
+    # Store results
     self.coefficients_ = coeffs
     self.priors_used_ = np.array(priors) 
     self.feature_names_ = list(X.columns)
@@ -191,7 +187,6 @@ class ExpertRidge:
   
   def predict(self, X: pd.DataFrame) -> np.ndarray:
      self._check_is_fitted()
-
 
      X_array = X[self.feature_names_].values 
 

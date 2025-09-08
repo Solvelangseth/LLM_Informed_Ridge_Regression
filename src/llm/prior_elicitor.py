@@ -303,7 +303,7 @@ Be thorough in your reasoning but concise in your final estimates."""
             print(f"Feature names for parsing: {feature_names}")
             print(f"Custom prompt (first 200 chars): {custom_prompt[:200]}...")
             
-            # Step 1: Call LLM API with custom prompt
+            # Call LLM API with custom prompt
             print("Calling LLM API with custom prompt...")
             response_text = self.call_llm_api(custom_prompt)
             
@@ -313,7 +313,7 @@ Be thorough in your reasoning but concise in your final estimates."""
             
             print(f"Got LLM response (first 300 chars): {response_text[:300]}...")
             
-            # Step 2: Parse response
+            # Parse response
             print("Parsing LLM response...")
             parsed_result = self.parse_simple_response(response_text, feature_names)
             
