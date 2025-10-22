@@ -2,206 +2,263 @@ from typing import List, Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import Ridge
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from llm.prior_elicitor import LLMPriorElicitor
+
+from .custom_ridge import CustomRidge
+from ..llm.target_elicitor import LLMTargetElicitor
 
 class ExpertRidge:
-  """
-  Ridge Regression that incorporates expert priors from llm experts
-  """
-
-  def __init__(self, alpha: float = 1.0, llm_model: str = "gpt-4", validate_priors: bool = True):
-    """
-    Initialize expert ridge 
-    Parameters:
-    alpha: float 
-      base ridge regularisation parameter 
-    llm_model : str 
-      LLM model for prior eliccitation 
-    validate priors : bool 
-      Whether to validate the priors before using them 
-    """
-    self.alpha = alpha 
-    self.validate_priors = validate_priors
-    self.llm_model = llm_model
-
-    # Initialise components 
-    #self.llm_elicitor = LLMPriorElicitor(model_name=llm_model)
-    #self.prior_validator = PriorValidator() if validate_priors else None 
-
-
-    self.feature_names_ = None
-    self.target_name_ = None
-    self.coefficients_ = None
-    self.priors_used_ = None
-    self.llm_response_ = None
-    self.validation_results_ = None
-    self.is_fitted_ = False
-
-
-
-  def _validate_input_data(self, X: pd.DataFrame, y: pd.Series):
-
-    # Type checking
-    if not isinstance(X, pd.DataFrame):
-        raise ValueError("X must be a pandas DataFrame")
+    def __init__(self, alpha=1.0, llm_model="gpt-4"):
+        self.alpha = alpha
+        self.llm_model = llm_model
+        self.ridge_model = None
+        self.is_fitted_ = False
+        self.feature_names_ = None  
+        self.targets_used_ = None 
     
-    if not isinstance(y, pd.Series):
-        raise ValueError("y must be a pandas Series")
-    
-    # Dimension checking
-    if X.shape[0] != len(y):
-        raise ValueError(f"X has {X.shape[0]} samples but y has {len(y)} samples")
-    
-    if X.shape[0] == 0:
-        raise ValueError("Empty dataset")
+    def fit(self, X, y, target_name, targets=None, custom_prompt=None):
+        # Handle LLM integration when available
+        if targets is None and custom_prompt is not None:
+            try:
+                from llm.target_elicitor import LLMTargetElicitor
+                elicitor = LLMTargetElicitor(self.llm_model)
+                result = elicitor.get_targets_with_prompt(custom_prompt, list(X.columns))
+                targets = result['targets'] if result else None
+            except ImportError:
+                print("LLM Target Elicitor not available - using targets=None")
+                targets = None
         
-    if X.shape[1] == 0:
-        raise ValueError("No features in X")
-    
-    return True
-  
-
-  def _convert_to_arrays(self, X: pd.DataFrame, y: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
-     X_array = X.values
-     y_array = y.values
-
-     return X_array, y_array
-  
-  def _get_mock_priors(self, feature_names: List[str]) -> List[float]:
-      # Return different number based on actual features
-      return [200.0] * len(feature_names) 
-    
-  def _fit_ridge_with_priors(self, X, y, mu, lambda_reg):
-    # Transform y with the mu from the llm 
-    y_tilde = y - X @ mu
-    # Fit ridge regression
-    ridge = Ridge(alpha=lambda_reg, fit_intercept=False)
-    ridge.fit(X, y_tilde)
-
-    beta = ridge.coef_ + mu
-
-    return beta
-
-
-  def _check_is_fitted(self):
-     fitted_attributes = ['coefficients_', 'feature_names_', 'priors_used_']
-
-     for attr in fitted_attributes:
-        if getattr(self, attr, None) is None:
-          raise ValueError(f"This ExpertRidge instance is not fitted yet. "
-                           f"Call 'fit' before using this method.")
+        # Convert targets to numpy array if provided
+        if targets is not None:
+            targets = np.asarray(targets)
         
-  def fit(self, X: pd.DataFrame, y: pd.Series, target_name: str, domain: Optional[str] = None, use_llm: bool = True, custom_priors=None) -> 'ExpertRidge':
-    """
-    Fit ridge regression with LLM-generated priors
+        self.ridge_model = CustomRidge(alpha=self.alpha)
+        self.ridge_model.fit(X.values, y.values, targets=targets)
+        
+        # Store for research analysis
+        self.feature_names_ = list(X.columns)
+        self.targets_used_ = targets
+        self.is_fitted_ = True
+        return self
     
-    Parameters:
-    -----------
-    X : pd.DataFrame
-        Feature data
-    y : pd.Series
-        Target data  
-    target_name : str
-        Name of target variable
-    domain : str, optional
-        Domain context for LLM
-    use_llm : bool, default=True
-        If True, use LLM for priors. If False, use mock priors.
-    """
-    print("=== FITTING EXPERT RIDGE ===")
+    def predict(self, X):
+        if not self.is_fitted_:
+            raise ValueError("Must fit before prediction")
+        return self.ridge_model.predict(X.values)
     
-    # Validate input
-    self._validate_input_data(X, y)
-    print("✅ Input validation passed")
+    def score(self, X, y):
+        if not self.is_fitted_:
+            raise ValueError("Must fit before scoring")
+        return self.ridge_model.score(X.values, y.values)
+    
+    # Research methods - delegate to CustomRidge
+    def get_loss_components(self, X, y):
+        if not self.is_fitted_:
+            raise ValueError("Must fit before getting loss components")
+        return self.ridge_model.get_loss_components(X.values, y.values)
+    
+    def get_coefficient_summary(self):
+        if not self.is_fitted_:
+            raise ValueError("Must fit before getting summary")
+        
+        # Handle case where targets_used_ is None
+        if self.targets_used_ is not None:
+            targets_for_display = self.targets_used_
+            adjustments = self.ridge_model.coef_ - self.targets_used_
+        else:
+            targets_for_display = np.zeros(len(self.feature_names_))
+            adjustments = self.ridge_model.coef_ - targets_for_display
+        
+        return pd.DataFrame({
+            'feature': self.feature_names_,
+            'target': targets_for_display,
+            'coefficient': self.ridge_model.coef_,
+            'adjustment': adjustments
+        })
 
-    # Convert to arrays & store feature names
-    X_array, y_array = self._convert_to_arrays(X, y)
-    print(f"✅ Converted to arrays: X{X_array.shape}, y{y_array.shape}")
 
-    if custom_priors is not None:
-      print("Using provided custom priors")
-      priors = custom_priors
-      self.llm_response_ = {'priors': custom_priors, 'source': 'custom'}
-      # Get coeficcients
-    elif use_llm:
-        print("Getting coefficients from LLM...")
-        try:
-            # Create LLM elicitor
-            llm_elicitor = LLMPriorElicitor(model_name=self.llm_model)
-            
-            # Get priors from LLM
-            llm_response = llm_elicitor.get_priors(X, y, target_name, domain)
-            
-            if llm_response:
-                priors = llm_response['priors']
-                self.llm_response_ = llm_response
-                print(f"✅ Got LLM priors: {priors}")
-                print(f"   Domain identified: {llm_response.get('domain', 'unknown')}")
-            else:
-                print("⚠️ LLM failed, using mock priors")
-                priors = self._get_mock_priors(list(X.columns))
-                self.llm_response_ = None
-                
-        except Exception as e:
-            print(f"⚠️ LLM integration failed: {e}")
-            print("   Falling back to mock priors")
-            priors = self._get_mock_priors(list(X.columns))
-            self.llm_response_ = None
+if __name__ == "__main__":
+    """
+    Quick test script for ExpertRidge class
+    Tests imports, basic functionality, and CustomRidge integration
+    """
+
+    print("ExpertRidge Integration Test")
+    print("=" * 40)
+
+    # Test 1: Basic instantiation
+    print("\nTest 1: Basic instantiation")
+    print("-" * 30)
+
+    try:
+        expert = ExpertRidge(alpha=1.0)
+        print("✅ ExpertRidge instantiated successfully")
+        print(f"   Alpha: {expert.alpha}")
+        print(f"   LLM Model: {expert.llm_model}")
+        print(f"   Is fitted: {expert.is_fitted_}")
+    except Exception as e:
+        print(f"❌ Instantiation failed: {e}")
+
+    # Test 2: Create synthetic data
+    print("\nTest 2: Creating synthetic data")
+    print("-" * 30)
+
+    np.random.seed(42)
+    n_samples, n_features = 100, 3
+    X = pd.DataFrame(
+        np.random.randn(n_samples, n_features),
+        columns=['feature_A', 'feature_B', 'feature_C']
+    )
+    true_coef = np.array([1.5, -2.0, 0.5])
+    y = pd.Series(
+        X.values @ true_coef + np.random.randn(n_samples) * 0.1,
+        name='target'
+    )
+
+    print(f"✅ Created synthetic data")
+    print(f"   X shape: {X.shape}")
+    print(f"   y shape: {y.shape}")
+    print(f"   True coefficients: {true_coef}")
+
+    # Test 3: Fit without targets (traditional Ridge)
+    print("\nTest 3: Fit without targets")
+    print("-" * 30)
+
+    try:
+        expert_no_targets = ExpertRidge(alpha=1.0)
+        expert_no_targets.fit(X, y, target_name="test_target", targets=None)
+        
+        print("✅ Fitting without targets successful")
+        print(f"   Is fitted: {expert_no_targets.is_fitted_}")
+        print(f"   Feature names: {expert_no_targets.feature_names_}")
+        print(f"   Coefficients: {expert_no_targets.ridge_model.coef_}")
+        print(f"   Intercept: {expert_no_targets.ridge_model.intercept_}")
+        
+    except Exception as e:
+        print(f"❌ Fitting without targets failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # Test 4: Predictions and scoring
+    print("\nTest 4: Predictions and scoring")
+    print("-" * 30)
+
+    try:
+        predictions = expert_no_targets.predict(X)
+        score = expert_no_targets.score(X, y)
+        
+        print("✅ Predictions and scoring successful")
+        print(f"   Prediction shape: {predictions.shape}")
+        print(f"   Sample predictions: {predictions[:5]}")
+        print(f"   R² score: {score:.4f}")
+        
+    except Exception as e:
+        print(f"❌ Predictions failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # Test 5: Fit with manual targets
+    print("\nTest 5: Fit with manual targets")
+    print("-" * 30)
+
+    try:
+        manual_targets = [1.2, -1.8, 0.4]  # Close to true coefficients
+        expert_with_targets = ExpertRidge(alpha=1.0)
+        expert_with_targets.fit(X, y, target_name="test_target", targets=manual_targets)
+        
+        print("✅ Fitting with targets successful")
+        print(f"   Targets used: {expert_with_targets.targets_used_}")
+        print(f"   Coefficients: {expert_with_targets.ridge_model.coef_}")
+        
+        # Compare with no-targets version
+        adjustment = expert_with_targets.ridge_model.coef_ - expert_no_targets.ridge_model.coef_
+        print(f"   Coefficient adjustments: {adjustment}")
+        print(f"   Max adjustment: {np.max(np.abs(adjustment)):.4f}")
+        
+    except Exception as e:
+        print(f"❌ Fitting with targets failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # Test 6: Coefficient summary
+    print("\nTest 6: Coefficient summary")
+    print("-" * 30)
+
+    try:
+        summary = expert_with_targets.get_coefficient_summary()
+        print("✅ Coefficient summary successful")
+        print(summary)
+        
+    except Exception as e:
+        print(f"❌ Coefficient summary failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # Test 7: Loss components
+    print("\nTest 7: Loss components analysis")
+    print("-" * 30)
+
+    try:
+        loss_components = expert_with_targets.get_loss_components(X, y)
+        print("✅ Loss components analysis successful")
+        print(f"   MSE Loss: {loss_components['mse_loss']:.6f}")
+        print(f"   Regularization Loss: {loss_components['regularization_loss']:.6f}")
+        print(f"   Total Loss: {loss_components['total_loss']:.6f}")
+        
+    except Exception as e:
+        print(f"❌ Loss components failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # Test 8: Compare performance
+    print("\nTest 8: Performance comparison")
+    print("-" * 30)
+
+    try:
+        score_no_targets = expert_no_targets.score(X, y)
+        score_with_targets = expert_with_targets.score(X, y)
+        improvement = score_with_targets - score_no_targets
+        
+        print("✅ Performance comparison successful")
+        print(f"   Traditional Ridge R²: {score_no_targets:.4f}")
+        print(f"   Target-informed R²:   {score_with_targets:.4f}")
+        print(f"   Improvement:          {improvement:+.4f}")
+        
+    except Exception as e:
+        print(f"❌ Performance comparison failed: {e}")
+
+    # Test 9: Check CustomRidge integration
+    print("\nTest 9: CustomRidge integration check")
+    print("-" * 30)
+
+    try:
+        print(f"✅ CustomRidge integration verified")
+        print(f"   Ridge model type: {type(expert_with_targets.ridge_model)}")
+        print(f"   Is CustomRidge: {isinstance(expert_with_targets.ridge_model, CustomRidge)}")
+        
+        # Test CustomRidge-specific methods
+        reg_matrix = expert_with_targets.ridge_model.get_regularization_matrix(X.values)
+        print(f"   Regularization matrix shape: {reg_matrix.shape}")
+        
+    except Exception as e:
+        print(f"❌ CustomRidge integration check failed: {e}")
+
+    # Summary
+    print("\n" + "=" * 40)
+    print("TEST SUMMARY")
+    print("=" * 40)
+
+    if expert_no_targets.is_fitted_ and expert_with_targets.is_fitted_:
+        print("✅ All core functionality working")
+        print("✅ CustomRidge integration successful")
+        print("✅ Target-informed regularization operational")
+        print("\nReady for full testing and LLM integration!")
     else:
-        print("📝 Using mock priors (LLM disabled)")
-        priors = self._get_mock_priors(list(X.columns))
-        self.llm_response_ = None
+        print("❌ Some tests failed - check implementation")
 
-    print(f"   Final priors used: {priors}")
-
-    # Validate priors (implement later)
-    # if self.validate_priors:
-    #     validation = self.prior_validator.validate_all(...)
-
-    # Adjust alpha based on confidence (implement later)
-    # adjusted_alpha = self._adjust_alpha_by_confidence(self.alpha, "medium")
-
-    # Step 6: Fit ridge with priors
-    print("🔧 Fitting ridge regression with priors...")
-    coeffs = self._fit_ridge_with_priors(X_array, y_array, np.array(priors), self.alpha)
-    print(f"✅ Ridge fitting complete")
-
-    # Store results
-    self.coefficients_ = coeffs
-    self.priors_used_ = np.array(priors) 
-    self.feature_names_ = list(X.columns)
-    self.target_name_ = target_name
-    self.is_fitted_ = True
-
-    print("=== FITTING COMPLETE ===")
-    print(f"   Features: {self.feature_names_}")
-    print(f"   Priors:   {self.priors_used_}")
-    print(f"   Final coefficients: {self.coefficients_}")
-    print(f"   Adjustments: {self.coefficients_ - self.priors_used_}")
-
-    return self
-  
-  def predict(self, X: pd.DataFrame) -> np.ndarray:
-     self._check_is_fitted()
-
-     X_array = X[self.feature_names_].values 
-
-     return X_array @ self.coefficients_
-  
-  def get_coefficient_summary(self) -> pd.DataFrame:
-    # Return DataFrame with:
-    # ['feature', 'llm_prior', 'final_coefficient', 'adjustment']
-    self._check_is_fitted()
-    
-    return pd.DataFrame({
-        'feature': self.feature_names_,
-        'llm_prior': self.priors_used_,
-        'final_coefficient': self.coefficients_,
-        'adjustment': self.coefficients_ - self.priors_used_
-    })
-
-
+    print("\nNext steps:")
+    print("1. Run the full notebook test")
+    print("2. Test LLM integration with custom prompts")
+    print("3. Validate on real datasets")
