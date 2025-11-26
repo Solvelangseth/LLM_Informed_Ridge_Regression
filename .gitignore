@@ -1,29 +1,55 @@
-# Environment files
-.env
+# Python cache
 __pycache__/
 *.pyc
-*.pyo
-.venv/
-env/
-.env/
 
-# Jupyter
+# Jupyter notebook checkpoints
 .ipynb_checkpoints/
-*.ipynb
 
-# Data files (you might want to exclude large datasets)
-data/*.csv
-data/*.json
-data/raw/
+# macOS metadata
+.DS_Store
 
-# Results and logs
-results/
-*.log
+# Virtual environments
+venv/
+env/
+.venv/
 
-# IDE
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# IDE settings
 .vscode/
 .idea/
 
-# OS
-.DS_Store
-Thumbs.db
+# Logs
+*.log
+
+# Local config files
+*.env
+
+# Data (large or generated)
+data/_misc/
+data/external/
+**/*.XPT
+**/*.zip
+
+# Temporary experiment outputs
+**/*.csv
+**/*.png
+**/*.jpg
+experiments/
+
+# RAG vector DBs or caches
+rag/*.db
+rag/cache/
+
+# Old structure remnants
+ood_tesing/
+src/models/
+
+# Notebook backup files
+*.ipynb.bak
+
+# Ignore TEST notebooks if any
+notebooks/archived/
