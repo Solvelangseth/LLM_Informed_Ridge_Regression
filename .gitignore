@@ -39,6 +39,7 @@ experiments/
 
 # Notebooks (exploratory)
 notebooks/
+*.ipynb
 
 # Papers / references
 docs/papers/
