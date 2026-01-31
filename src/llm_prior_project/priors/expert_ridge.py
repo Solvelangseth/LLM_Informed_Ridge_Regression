@@ -7,7 +7,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from .custom_ridge import CustomRidge
-from .target_elicitor import LLMTargetElicitor
+from .llm_prior_elicitor import LLMTargetElicitor
 
 class ExpertRidge:
     def __init__(self, alpha=1.0, llm_model="gpt-4"):

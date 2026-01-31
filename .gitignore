@@ -48,6 +48,9 @@ rag/*.db
 rag/cache/
 scripts/locked_runs/
 
+# Package-local testing artifacts
+src/llm_prior_project/testing/
+
 # Old structure remnants
 ood_tesing/
 src/models/
