@@ -29,20 +29,24 @@ dist/
 *.env
 
 # Data (large or generated)
-data/_misc/
-data/external/
+data/
 **/*.XPT
 **/*.zip
 
-# Temporary experiment outputs
-**/*.csv
-**/*.png
-**/*.jpg
+# Runs / experiment outputs
+runs/
 experiments/
+
+# Notebooks (exploratory)
+notebooks/
+
+# Papers / references
+docs/papers/
 
 # RAG vector DBs or caches
 rag/*.db
 rag/cache/
+scripts/locked_runs/
 
 # Old structure remnants
 ood_tesing/
@@ -50,6 +54,3 @@ src/models/
 
 # Notebook backup files
 *.ipynb.bak
-
-# Ignore TEST notebooks if any
-notebooks/archived/
